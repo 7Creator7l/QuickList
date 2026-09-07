@@ -51,13 +51,13 @@ jobs:
           mkdir project
           unzip -q "$ZIP" -d project
 
-          echo "Project contents:"
+          echo "Project files:"
           find project -maxdepth 3 -type f | sort
 
       - name: Locate Android project
         run: |
           if [ -f "project/settings.gradle" ] || [ -f "project/settings.gradle.kts" ]; then
-            echo "Android project found in project/"
+            echo "PROJECT_DIR=project" >> "$GITHUB_ENV"
           else
             INNER=$(find project -maxdepth 2 -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) | head -n 1)
 
@@ -71,18 +71,12 @@ jobs:
             echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           fi
 
-      - name: Set project directory
-        run: |
-          if [ -z "${PROJECT_DIR:-}" ]; then
-            echo "PROJECT_DIR=project" >> "$GITHUB_ENV"
-          fi
-
       - name: Fix Kotlin dependency conflict
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           cat >> app/build.gradle <<'EOF'
 
-          // QuickList Kotlin dependency compatibility fix
+          // QuickList Kotlin compatibility fix
           configurations.configureEach {
               resolutionStrategy.eachDependency { details ->
                   if (details.requested.group == "org.jetbrains.kotlin") {
@@ -90,23 +84,26 @@ jobs:
                           details.requested.name == "kotlin-stdlib-jdk7" ||
                           details.requested.name == "kotlin-stdlib-jdk8") {
                           details.useVersion("1.8.22")
-                          details.because("Use one compatible Kotlin stdlib version")
+                          details.because("Use one Kotlin stdlib version")
                       }
                   }
               }
           }
           EOF
 
-          echo "Kotlin dependency fix added."
-
-      - name: Build Release APK
+      - name: Build Signed Debug APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          gradle :app:assembleRelease --no-daemon
+          gradle :app:assembleDebug --no-daemon
 
-      - name: Upload APK
+      - name: Check APK
+        run: |
+          echo "APK files:"
+          find "${PROJECT_DIR}/app/build/outputs/apk/debug" -type f -name "*.apk" -print
+
+      - name: Upload Signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: quicklist-release-apk
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/release/*.apk
+          name: quicklist-signed-apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
