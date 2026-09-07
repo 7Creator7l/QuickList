@@ -38,23 +38,66 @@ jobs:
           ZIP=$(find . -maxdepth 1 -type f -iname 'QuickList*.zip' | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "QuickList Android ZIP not found"
+            echo "ERROR: QuickList Android ZIP not found"
+            echo "ZIP files in repository:"
             find . -maxdepth 1 -type f -iname '*.zip'
             exit 1
           fi
 
-          echo "Found: $ZIP"
+          echo "Found project: $ZIP"
 
-          mkdir -p project
+          rm -rf project
+          mkdir project
+
           unzip -q "$ZIP" -d project
 
-          echo "Project contents:"
+          echo "Project files:"
           find project -maxdepth 3 -type f | head -100
+
+      - name: Fix Kotlin dependency conflict
+        run: |
+          echo "Fixing Kotlin duplicate class dependencies..."
+
+          cat >> project/build.gradle <<'EOF'
+
+          configurations.all {
+              exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk7"
+              exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk8"
+
+              resolutionStrategy.force(
+                  "org.jetbrains.kotlin:kotlin-stdlib:1.8.22"
+              )
+          }
+          EOF
+
+          echo "Final project/build.gradle:"
+          cat project/build.gradle
+
+      - name: Check Android project
+        run: |
+          if [ ! -f project/settings.gradle ] && [ ! -f project/settings.gradle.kts ]; then
+            echo "ERROR: settings.gradle not found"
+            find project -maxdepth 4 -type f
+            exit 1
+          fi
+
+          if [ ! -d project/app ]; then
+            echo "ERROR: app directory not found"
+            find project -maxdepth 4 -type d
+            exit 1
+          fi
+
+          echo "Android project detected successfully."
 
       - name: Build Release AAB
         working-directory: project
         run: |
           gradle :app:bundleRelease --no-daemon
+
+      - name: Find generated AAB
+        run: |
+          echo "Generated AAB files:"
+          find project/app/build/outputs -type f -name '*.aab' -print
 
       - name: Upload AAB
         uses: actions/upload-artifact@v4
